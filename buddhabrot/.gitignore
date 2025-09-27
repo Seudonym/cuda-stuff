@@ -1,0 +1,5 @@
+*.out
+*.pgm
+*.ppm
+*.bin
+.ipynb_checkpoints
