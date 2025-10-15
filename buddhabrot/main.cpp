@@ -81,18 +81,24 @@ int main(int argc, char **argv)
   RenderConfig config(config_file.c_str());
   config.print();
 
-  uint32_t *histogram = new uint32_t[config.width * config.height]();
-  launch_buddhabrot_kernel(histogram, config);
+  // uint32_t *histogram = new uint32_t[config.width * config.height]();
+  // launch_buddhabrot_kernel(histogram, config);
+  // write_pgm(histogram, config.width, config.height, output_file.c_str());
 
-  if (!save_assets_dir.empty())
-  {
-    std::string hist_file = save_assets_dir + "histogram.raw";
-    std::ofstream hist_out(hist_file, std::ios::binary);
-    hist_out.write(reinterpret_cast<char *>(histogram), config.width * config.height * sizeof(uint32_t));
-    hist_out.close();
-    std::cout << "Saved histogram to " << hist_file << "\n";
-  }
-  write_pgm(histogram, config.width, config.height, output_file.c_str());
+  uint32_t *r_hist = new uint32_t[config.width * config.height]();
+  uint32_t *g_hist = new uint32_t[config.width * config.height]();
+  uint32_t *b_hist = new uint32_t[config.width * config.height]();
+  launch_buddhabrot_rgb_kernel(r_hist, g_hist, b_hist, config);
+  write_ppm(r_hist, g_hist, b_hist, config.width, config.height, output_file.c_str());
+
+  // if (!save_assets_dir.empty())
+  // {
+  //   std::string hist_file = save_assets_dir + "histogram.raw";
+  //   std::ofstream hist_out(hist_file, std::ios::binary);
+  //   hist_out.write(reinterpret_cast<char *>(histogram), config.width * config.height * sizeof(uint32_t));
+  //   hist_out.close();
+  //   std::cout << "Saved histogram to " << hist_file << "\n";
+  // }
 
   return 0;
 }

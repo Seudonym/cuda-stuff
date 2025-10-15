@@ -15,7 +15,9 @@ public:
     /// y_max: 2.0
     /// max_iterations: 2000
     /// samples_per_thread: 100000
-    /// chunk_divisor: 10
+    /// r_thresh: 50
+    /// g_thresh: 100
+    /// b_thresh: 2000  // all three have to be < max_iterations
     /// ```
     /// @param filename The name of the file to load the configuration from
     RenderConfig(const char *filename);
@@ -25,5 +27,6 @@ public:
 
     size_t width, height;
     float x_min, x_max, y_min, y_max;
-    size_t max_iterations, samples_per_thread, chunk_divisor;
+    size_t max_iterations, samples_per_thread;
+    size_t r_thresh, g_thresh, b_thresh;
 };

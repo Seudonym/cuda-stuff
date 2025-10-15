@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 4.0)
 project(buddhabrot LANGUAGES CXX CUDA)
+enable_language(CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
+#set(CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS} "-g -G -lineinfo")
 
 set(SRC_FILES
 	main.cpp
@@ -12,7 +15,6 @@ set(SRC_FILES
 )
 
 file(GLOB KERNEL_SOURCES "include/kernels/*.cu")
-set(KERNEL_SOURCES ${KERNEL_SOURCES} "include/complex.cu")
 
 include_directories(
 	include
