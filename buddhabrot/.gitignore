@@ -1,5 +1,3 @@
-*.out
-*.pgm
-*.ppm
-*.bin
 .ipynb_checkpoints
+.venv
+build

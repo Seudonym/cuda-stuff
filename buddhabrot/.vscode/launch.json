@@ -1,0 +1,11 @@
+{
+    "configurations": [
+    {
+        "name": "CUDA C++: Launch",
+        "type": "cuda-gdb",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/buddhabrot",
+        "args": "-c render_config.txt -o output.pgm -s temp"
+    }
+    ]
+}

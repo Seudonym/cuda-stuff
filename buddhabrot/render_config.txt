@@ -1,0 +1,9 @@
+width: 8000
+height: 8000
+x_min: -2.0
+x_max: 1.0
+y_min: -1.5
+y_max: 1.5
+max_iterations: 2000
+samples_per_thread: 100000
+chunk_divisor: 200
