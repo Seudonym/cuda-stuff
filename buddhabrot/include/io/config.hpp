@@ -27,6 +27,6 @@ public:
 
     size_t width, height;
     float x_min, x_max, y_min, y_max;
-    size_t max_iterations, samples_per_thread;
+    size_t max_iterations, samples_per_thread, num_chunks;
     size_t r_thresh, g_thresh, b_thresh;
 };

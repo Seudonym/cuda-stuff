@@ -1,4 +1,6 @@
 #include "io/config.hpp"
+#include "kernels/kernels.hpp"
+#include "curand_utils.cuh"
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <cstdio>
@@ -19,14 +21,8 @@
         }                                                      \
     } while (0)
 
-__global__ void init_curand_states(curandState *states, unsigned long seed)
-{
-    int id = blockIdx.x * blockDim.x + threadIdx.x;
-    curand_init(seed, id, 0, &states[id]);
-}
-
 __global__ void buddhabrot_kernel(uint32_t *histogram, RenderConfig config,
-                                  curandState *states, volatile int *progress)
+                                  curandState *states)
 {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
     curandState state = states[thread_id];
@@ -78,19 +74,11 @@ __global__ void buddhabrot_kernel(uint32_t *histogram, RenderConfig config,
         }
     }
 
-    // Report progress after this thread completes all samples
-    // Only one thread per block reports to reduce atomic contention
-    if (threadIdx.x == 0)
-    {
-        atomicAdd((int *)progress, 1);
-        __threadfence_system();
-    }
-
     states[thread_id] = state;
 }
 
 __global__ void buddhabrot_rgb_kernel(uint32_t *r_hist, uint32_t *g_hist, uint32_t *b_hist, RenderConfig config,
-                                      curandState *states, volatile int *progress)
+                                      curandState *states)
 {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
     curandState state = states[thread_id];
@@ -146,15 +134,6 @@ __global__ void buddhabrot_rgb_kernel(uint32_t *r_hist, uint32_t *g_hist, uint32
             }
         }
     }
-
-    // Report progress after this thread completes all samples
-    // Only one thread per block reports to reduce atomic contention
-    if (threadIdx.x == 0)
-    {
-        atomicAdd((int *)progress, 1);
-        __threadfence_system();
-    }
-
     states[thread_id] = state;
 }
 
@@ -162,16 +141,6 @@ void launch_buddhabrot_kernel(uint32_t *histogram, RenderConfig config)
 {
     dim3 threads_per_block(256);
     dim3 num_blocks(1024);
-
-    // Allocate mapped pinned memory for progress tracking
-    volatile int *h_progress, *d_progress;
-    cudaSetDeviceFlags(cudaDeviceMapHost);
-    cudaCheckErrors("cudaSetDeviceFlags error");
-    cudaHostAlloc((void **)&h_progress, sizeof(int), cudaHostAllocMapped);
-    cudaCheckErrors("cudaHostAlloc error");
-    cudaHostGetDevicePointer((int **)&d_progress, (int *)h_progress, 0);
-    cudaCheckErrors("cudaHostGetDevicePointer error");
-    *h_progress = 0;
 
     curandState *d_states;
     cudaMalloc(&d_states, threads_per_block.x * num_blocks.x * sizeof(curandState));
@@ -186,49 +155,19 @@ void launch_buddhabrot_kernel(uint32_t *histogram, RenderConfig config)
     cudaMemset(d_histogram, 0, config.width * config.height * sizeof(uint32_t));
     cudaCheckErrors("cudaMemset error");
 
-    printf("Rendering buddhabrot...\n");
+    printf("Rendering buddhabrot grayscale...\n");
 
-    // Launch kernel with progress tracking
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start);
+    RenderConfig local_config = config;
+    local_config.samples_per_thread = config.samples_per_thread / config.num_chunks;
 
-    buddhabrot_kernel<<<num_blocks, threads_per_block>>>(d_histogram, config, d_states, d_progress);
-    cudaCheckErrors("Kernel launch error");
-
-    cudaEventRecord(stop);
-
-    // Poll for progress updates
-    unsigned int total_blocks = num_blocks.x * num_blocks.y;
-    int last_value = 0;
-    float last_progress = 0.0f;
-
-    printf("Progress:\n");
-    do
+    for (size_t c = 0; c < config.num_chunks; c++)
     {
-        cudaEventQuery(stop); // May help on Windows WDDM driver model
-        int current_value = *h_progress;
-        float current_progress = (float)current_value / (float)total_blocks;
-
-        if ((current_progress - last_progress) >= 0.02f)
-        {
-            printf("  %2.0f%% complete (%d/%d blocks)\n",
-                   current_progress * 100.0f, current_value, total_blocks);
-            last_progress = current_progress;
-        }
-        last_value = current_value;
-    } while (last_progress < 0.98f);
+        buddhabrot_kernel<<<num_blocks, threads_per_block>>>(d_histogram, local_config, d_states);
+        cudaDeviceSynchronize();
+        printf("  Chunk: (%d/%d)\n", c + 1, config.num_chunks);
+    }
     printf("\n");
-
-    // Wait for completion and measure time
-    cudaEventSynchronize(stop);
-    cudaCheckErrors("event sync error");
-
-    float elapsed_ms;
-    cudaEventElapsedTime(&elapsed_ms, start, stop);
-    printf("Rendering complete! Elapsed time: %.2f ms (%.2f seconds)\n",
-           elapsed_ms, elapsed_ms / 1000.0f);
+    printf("Done!\n");
 
     // Copy results back
     cudaMemcpy(histogram, d_histogram, config.width * config.height * sizeof(uint32_t),
@@ -238,25 +177,12 @@ void launch_buddhabrot_kernel(uint32_t *histogram, RenderConfig config)
     // Cleanup
     cudaFree(d_histogram);
     cudaFree(d_states);
-    cudaFreeHost((void *)h_progress);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
 }
 
 void launch_buddhabrot_rgb_kernel(uint32_t *r_hist, uint32_t *g_hist, uint32_t *b_hist, RenderConfig config)
 {
     dim3 threads_per_block(256);
     dim3 num_blocks(1024);
-
-    // Allocate mapped pinned memory for progress tracking
-    volatile int *h_progress, *d_progress;
-    cudaSetDeviceFlags(cudaDeviceMapHost);
-    cudaCheckErrors("cudaSetDeviceFlags error");
-    cudaHostAlloc((void **)&h_progress, sizeof(int), cudaHostAllocMapped);
-    cudaCheckErrors("cudaHostAlloc error");
-    cudaHostGetDevicePointer((int **)&d_progress, (int *)h_progress, 0);
-    cudaCheckErrors("cudaHostGetDevicePointer error");
-    *h_progress = 0;
 
     curandState *d_states;
     cudaMalloc(&d_states, threads_per_block.x * num_blocks.x * sizeof(curandState));
@@ -277,47 +203,17 @@ void launch_buddhabrot_rgb_kernel(uint32_t *r_hist, uint32_t *g_hist, uint32_t *
 
     printf("Rendering buddhabrot...\n");
 
-    // Launch kernel with progress tracking
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start);
+    RenderConfig local_config = config;
+    local_config.samples_per_thread = config.samples_per_thread / config.num_chunks;
 
-    buddhabrot_rgb_kernel<<<num_blocks, threads_per_block>>>(d_r_hist, d_g_hist, d_b_hist, config, d_states, d_progress);
-    cudaCheckErrors("Kernel launch error");
-
-    cudaEventRecord(stop);
-
-    // Poll for progress updates
-    unsigned int total_blocks = num_blocks.x * num_blocks.y;
-    int last_value = 0;
-    float last_progress = 0.0f;
-
-    printf("Progress:\n");
-    do
+    for (size_t c = 0; c < config.num_chunks; c++)
     {
-        cudaEventQuery(stop); // May help on Windows WDDM driver model
-        int current_value = *h_progress;
-        float current_progress = (float)current_value / (float)total_blocks;
-
-        if ((current_progress - last_progress) >= 0.02f)
-        {
-            printf("  %2.0f%% complete (%d/%d blocks)\n",
-                   current_progress * 100.0f, current_value, total_blocks);
-            last_progress = current_progress;
-        }
-        last_value = current_value;
-    } while (last_progress <= 0.98f);
+        buddhabrot_rgb_kernel<<<num_blocks, threads_per_block>>>(d_r_hist, d_g_hist, d_b_hist, local_config, d_states);
+        cudaDeviceSynchronize();
+        printf("  Chunk: (%d/%d)\n", c + 1, config.num_chunks);
+    }
     printf("\n");
-
-    // Wait for completion and measure time
-    cudaEventSynchronize(stop);
-    cudaCheckErrors("event sync error");
-
-    float elapsed_ms;
-    cudaEventElapsedTime(&elapsed_ms, start, stop);
-    printf("Rendering complete! Elapsed time: %.2f ms (%.2f seconds)\n",
-           elapsed_ms, elapsed_ms / 1000.0f);
+    printf("Done!\n");
 
     // Copy results back
     cudaMemcpy(r_hist, d_r_hist, config.width * config.height * sizeof(uint32_t), cudaMemcpyDeviceToHost);
@@ -330,7 +226,4 @@ void launch_buddhabrot_rgb_kernel(uint32_t *r_hist, uint32_t *g_hist, uint32_t *
     cudaFree(d_g_hist);
     cudaFree(d_b_hist);
     cudaFree(d_states);
-    cudaFreeHost((void *)h_progress);
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
 }

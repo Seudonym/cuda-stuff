@@ -40,6 +40,8 @@ RenderConfig::RenderConfig(const char *filename)
                     this->max_iterations = std::stoul(value_str);
                 else if (key == "samples_per_thread")
                     this->samples_per_thread = std::stoul(value_str);
+                else if (key == "num_chunks")
+                    this->num_chunks = std::stoul(value_str);
                 else if (key == "r_thresh")
                     this->r_thresh = std::stoul(value_str);
                 else if (key == "g_thresh")
@@ -63,5 +65,9 @@ void RenderConfig::print()
               << "  y_min: " << y_min << "\n"
               << "  y_max: " << y_max << "\n"
               << "  max_iterations: " << max_iterations << "\n"
-              << "  samples_per_thread: " << samples_per_thread << "\n";
+              << "  samples_per_thread: " << samples_per_thread << "\n"
+              << "  num_chunks: " << num_chunks << "\n"
+              << "  r_thresh: " << r_thresh << "\n"
+              << "  g_thresh: " << g_thresh << "\n"
+              << "  b_thresh: " << b_thresh << "\n";
 }
